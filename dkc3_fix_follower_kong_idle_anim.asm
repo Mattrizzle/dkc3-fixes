@@ -6,13 +6,30 @@ hirom
 
 incsrc dkc3_defines.asm
 
-;$F90000 
+;$F90000-$F9007D Table of substatus routines for follower to run based on leader's animation ID
+org $F90001
+	db $01	;Change follower's status while leader is idle (default: db $00). 
+		;In the vanilla game, $00 is a duplicate of $01. We've changed it so that it always shows the either the idle animation or the rolling animation
+		;(see FollowerCannonOrTeamUp), which would cause the follower to slide along the ground in their idle animation briefly when the leader 
+		;would start moving if this byte wasn't changed.
 org $F90006
-	db $07					;Change follower's status while riding a Steel Keg (default: db $02). This makes them use the Steel Keg riding animation, just like the leader.
+	db $07	;Change follower's substatus while leader is riding a Steel Keg (default: db $02). This makes them use the Steel Keg riding animation, just like the leader.
 
 org $F90015
-	db $03					;Change follower's status while throwing an object (default: db $01). This fixes a visual anomaly where the follower will display their walking animation in the air if the leader throws an object while jumping.
+	db $03	;Change follower's substatus while leader is throwing an object (default: db $01). This fixes a visual anomaly where the follower will display their walking
+		;animation in the air if the leader throws an object while jumping.
+org $F90037
+	db $00	;Change follower's substatus while fired from a Barrel Cannon or "teamed up" (default: db $05).
+		;For the "teamed up" part, this only affects when they've landed on the ground after being thrown into a sprite which knocks them back
+		;(e.g. Doorstop Dash's titular doorstops).
 
+org $F90039
+	db $16	;Change follower's substatus when leader collects a Bonus Coin (default: db $01).
+
+org $B88488
+	RTS				;\Make follower Kong copy leader Kong's movements the normal way after collecting a Bonus Coin 
+	padbyte $FF : pad $B88492	;/instead of floating in a straight line toward them
+					; (default: LDA.w #$001F : LDX.w #$0002 : LDY.w #$0000 : JSL $B8F028 : RTS)
 org $B8F14D
 	JMP.w FollowerKongIdleFix
 
@@ -62,20 +79,33 @@ IdleFix_Main:
 .Return
 	  RTS
 pushpc
+org $B8F1B1
+	dw FollowerCannonOrTeamUp	;Follower substatus $00, normally status 0 jumps to the same location as status 1: $B8F1C5
 
 org $B8F1B7
-	dw FollowerDisplayJumpAnim	;Status 3
+	dw FollowerDisplayJumpAnim	;Follower substatus $03
 
 org $B8F1BB
-	dw FollowerDisplayRollAnim	;Status 5
+	dw FollowerDisplayRollAnim	;Follower substatus $05
 
 org $B8F1DC
-	padbyte $EA : pad $B8F1E2
+	db $FF
+	dw FollowerBonusClear		;Follower substatus $16 (using space normally out of bounds for the table at $B8F1B1 for an extra status)
+	padbyte $FF : pad $B8F1E2
 
 org $B8F1F4
 	JMP.w FollowerKongLandFromAirFix
 
 pullpc
+FollowerCannonOrTeamUp:
+	LDY.w LeaderKongPtr
+	LDA.w $0038,y		; Load leader Kong's status
+	CMP #$001D		; Check if fired from barrel cannon
+	BEQ.b +			; Branch to vanilla rolling code if true
+	LDA.w #$0001		; Load ID of idle animation
+	JMP.w $B8F280		; Jump to routine to set animation
++	JMP.w $B8F1FA		; Jump to location of vanilla rolling code
+
 FollowerDisplayJumpAnim:
 	   LDX.b $70
 	   LDA.b $1A,x
@@ -141,6 +171,16 @@ ResetAnimationBuffer:
 	  BNE.b -
 	  PLX
 	  RTS
+
+FollowerBonusClear:
+	LDX.w LeaderKongPtr
+	LDA.b $60,x		;Load leader's walk timer
+	BEQ.b .LeaderWalking	;Skip setting follower idle flag if zero
+	LDA.w #$0008
+	TSB.w $1927
+.LeaderWalking
+	JMP.w $BBF1C5
+
 
 FollowerKongLandFromAirFix:
 	  JSR.w CheckGroundCollisionForFollowerIdleAnim
