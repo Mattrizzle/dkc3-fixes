@@ -15,6 +15,9 @@ org $F90001
 org $F90006
 	db $07	;Change follower's substatus while leader is riding a Steel Keg (default: db $02). This makes them use the Steel Keg riding animation, just like the leader.
 
+org $F90007
+	db $01	;Change follower's substatus while leader is crouching (default: db $00).
+		;This needs to be changed for same reason as $F90001.
 org $F90015
 	db $03	;Change follower's substatus while leader is throwing an object (default: db $01). This fixes a visual anomaly where the follower will display their walking
 		;animation in the air if the leader throws an object while jumping.
@@ -22,7 +25,6 @@ org $F90037
 	db $00	;Change follower's substatus while fired from a Barrel Cannon or "teamed up" (default: db $05).
 		;For the "teamed up" part, this only affects when they've landed on the ground after being thrown into a sprite which knocks them back
 		;(e.g. Doorstop Dash's titular doorstops).
-
 org $F90039
 	db $16	;Change follower's substatus when leader collects a Bonus Coin (default: db $01).
 
@@ -180,7 +182,6 @@ FollowerBonusClear:
 	TSB.w $1927
 .LeaderWalking
 	JMP.w $BBF1C5
-
 
 FollowerKongLandFromAirFix:
 	  JSR.w CheckGroundCollisionForFollowerIdleAnim
