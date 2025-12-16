@@ -8,7 +8,7 @@ incsrc dkc3_defines.asm
 
 ;$F90000-$F9007D Table of substatus routines for follower to run based on leader's animation ID
 org $F90001
-	db $01	;Change follower's status while leader is idle (default: db $00). 
+	db $01	;Change follower's substatus while leader is idle (default: db $00). 
 		;In the vanilla game, $00 is a duplicate of $01. We've changed it so that it always shows the either the idle animation or the rolling animation
 		;(see FollowerCannonOrTeamUp), which would cause the follower to slide along the ground in their idle animation briefly when the leader 
 		;would start moving if this byte wasn't changed.
@@ -17,7 +17,7 @@ org $F90006
 
 org $F90007
 	db $01	;Change follower's substatus while leader is crouching (default: db $00).
-		;This needs to be changed for same reason as $F90001.
+		;This needs to be changed for the same reason as $F90001.
 org $F90015
 	db $03	;Change follower's substatus while leader is throwing an object (default: db $01). This fixes a visual anomaly where the follower will display their walking
 		;animation in the air if the leader throws an object while jumping.
@@ -57,7 +57,8 @@ IdleFix_Main:
 	  AND.w #$0011		;Isolate the platform sprite and top of tile contact bits	  
 	  BNE.b .LeaderOnGround	;Branch if not zero
 	  LDA.b $1A,x		;Load follower Kong's ground distance
-	  BNE.b .Return		;Don't set idle flag if airborne
+	  CMP.w #$0002
+	  BCS.b .Return		;Don't set idle flag if airborne (2 or greater), checking for 0 doesn't account for ground distance sometimes staying 1 when the follower Kong is on the ground
 	  LDA.w $191B		;Load follower Kong status
 	  CMP.w #$0008		;Check if #$0008 (jumping)
 	  BEQ.b +		;If so, branch
@@ -81,6 +82,7 @@ IdleFix_Main:
 .Return
 	  RTS
 pushpc
+
 org $B8F1B1
 	dw FollowerCannonOrTeamUp	;Follower substatus $00, normally status 0 jumps to the same location as status 1: $B8F1C5
 
@@ -109,9 +111,10 @@ FollowerCannonOrTeamUp:
 +	JMP.w $B8F1FA		; Jump to location of vanilla rolling code
 
 FollowerDisplayJumpAnim:
-	   LDX.b $70
-	   LDA.b $1A,x
-	   BNE.b +
+	   LDX.b $70		; Load pointer to follower Kong	   \ Needed to fix issue with idle animation being displayed when 
+	   LDA.b $38,x		; Load follower Kong's status	    >follower Kong is released from DK Barrel when leader is on ground
+	   CMP.w #$003B		; Check if released from DK Barrel /
+	   BEQ.b +
 	   JSR.w CheckGroundCollisionForFollowerIdleAnim
 	   BCC.b +
 	   JSR.w ResetAnimationBuffer
@@ -126,7 +129,8 @@ CheckGroundCollisionForFollowerIdleAnim:
 	AND.w #$0011		; Isolate the platform sprite and top of tile contact bits
 	BEQ.b .LeaderInAir	; Branch if zero (leader in air)
 	LDA.b $1A,x		; Load follower Kong's ground distance
-	BEQ.b .FollowerOnGround	; Branch if zero (follower on ground)
+	CMP.w #$0002
+	BCC.b .FollowerOnGround	; Branch if 1 or less (follower on ground), checking for 0 doesn't account for ground distance sometimes staying 1 when the follower Kong is on the ground
 	LDA.b $16,x		; Load follower's Y-coordinate
 	CMP.w $0016,y 		; Compare to leader's Y-coordinate
 	BNE.b .LeaderInAir
@@ -218,7 +222,7 @@ HijackEnd_2:
 pullpc
 IdleAnimationZeroSpeedIfFollowerKong:
 	LDA.b $00,x		;\ Load current object's type
-	CMP.w #$0310		; >Check if NPC screen object
+	CMP.w #$0310		; >Check if NPC screen player object
 	BEQ.b +			;/ Branch to vanilla code if true
 	CPX.w FollowerKongPtr
 	BEQ.w ++
@@ -229,3 +233,17 @@ IdleAnimationZeroSpeedIfFollowerKong:
 ++	STZ.b $30,x		;Follower Kong X speed variable
 +	LDA.w #$0000
 	RTS
+
+org $BBB98A
+; Needed to fix issue with idle animation being displayed when follower Kong is released from DK Barrel when leader is on ground in Kastle KAOS
+CutsceneModeDKBarrelReleaseHijack:
+	JSR .Main
+
+org $BBC200
+.Main
+	LDX.w FollowerKongPtr
+	LDA.b $38,x
+	CMP.w #$003B
+	BNE.b +
+	RTS
++	JMP.w $BBB9EB
